@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+# field data: captures contain other people's MAC addresses
+loot/
+*.pcap
+*.pcapng
+*.nmea
+devices-*.csv
+devices-*.kml
+track-*.csv
