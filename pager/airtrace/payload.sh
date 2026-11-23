@@ -1,13 +1,13 @@
 #!/bin/bash
 # Title: AirTrace - passive recon (AP + clients + GPS)
-# Description: Passively records 802.11 frames to a pcap and raw GPS NMEA.
+# Description: Passively records 802.11 frames to a pcap plus a GPS log.
 #              Classification and geotagging are done on the PC (pc/airtrace.py).
 # Author: (you)
-# Version: 0.3
+# Version: 0.4
 #
 # Transmits nothing. Only a monitor-mode capture and a GPS log.
 #
-# Pager helpers used: LOG, WIFI_PCAP_START, WIFI_PCAP_STOP.
+# Pager helpers used: LOG, GPS_GET, WIFI_PCAP_START, WIFI_PCAP_STOP.
 # WIFI_PCAP_START takes no arguments: pineapd picks the file and the command
 # prints its name. We move that file into the session folder on stop.
 
@@ -16,21 +16,19 @@ SESSION="airtrace-$(date -u +%Y%m%dT%H%M%SZ)"
 LOOT="$LOOT_ROOT/$SESSION"
 PCAP="$LOOT/capture.pcap"        # final location after stop
 PCAP_SRC=""                      # file pineapd is writing while recording
-NMEA="$LOOT/gps.nmea"
-GPS_BAUD="${GPS_BAUD:-9600}"     # u-blox default; some modules use 4800/38400
+GPSLOG="$LOOT/gps.log"           # "<pager epoch> <lat> <lon> <alt> <speed>"
 
 mkdir -p "$LOOT"
-: >> "$NMEA"
+: >> "$GPSLOG"
 
-# Each RMC line is stored as "<pager epoch> $GPRMC,...". The PC side uses the
-# difference to the GPS time to fix pcap timestamps if the Pager clock is off
-# (no RTC / no NTP in the field). Pure shell: BusyBox grep may lack
-# --line-buffered, and this way nothing is buffered.
-gps_log() {
-    while IFS= read -r line; do
-        case "$line" in
-            '$GPRMC'*|'$GNRMC'*) printf '%s %s\n' "$(date -u +%s)" "$line" >> "$NMEA" ;;
-        esac
+# GPS: pineapd owns the receiver (gpsd is off), so read it through GPS_GET,
+# which prints "lat lon alt speed" (0.0 0.0 ... without a fix). Timestamps
+# come from the Pager clock, the same clock pineapd uses for the pcap.
+gps_poll() {
+    while true; do
+        GPS_GET 2>/dev/null | awk -v t="$(date -u +%s)" \
+            'NF >= 2 && ($1 + 0 != 0 || $2 + 0 != 0) { print t, $1, $2, $3, $4 }' >> "$GPSLOG"
+        sleep 1
     done
 }
 
@@ -41,7 +39,6 @@ cleanup() {
     STOPPING=1
     LOG "Stopping capture..."
     if [ -n "$GPS_PID" ]; then
-        pkill -P "$GPS_PID" 2>/dev/null   # gpspipe / reader inside the subshell
         kill "$GPS_PID" 2>/dev/null
     fi
     WIFI_PCAP_STOP
@@ -59,22 +56,10 @@ cleanup() {
 }
 trap cleanup INT TERM
 
-# --- GPS source: gpsd if running, otherwise serial port -------------------
-GPS_SRC="none"
-if pgrep -x gpsd >/dev/null 2>&1 && command -v gpspipe >/dev/null 2>&1; then
-    GPS_SRC="gpsd"
-    ( gpspipe -r | gps_log ) &
-    GPS_PID=$!
-else
-    TTY=$(ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null | head -n1)
-    if [ -n "$TTY" ]; then
-        GPS_SRC="$TTY"
-        stty -F "$TTY" "$GPS_BAUD" raw -echo 2>/dev/null
-        ( gps_log < "$TTY" ) &
-        GPS_PID=$!
-    fi
-fi
-LOG "GPS source: $GPS_SRC"
+# --- GPS ---------------------------------------------------------------
+gps_poll &
+GPS_PID=$!
+LOG "GPS: $(GPS_GET 2>/dev/null || echo 'GPS_GET failed')"
 
 # --- Capture --------------------------------------------------------------
 # WIFI_PCAP_START prints the capture file name (path may be relative).
@@ -92,7 +77,7 @@ LOG "pcap: ${PCAP_SRC:-<WIFI_PCAP_START failed>}"
 while true; do
     sleep 5 &
     wait $!
-    FIXES=$(wc -l < "$NMEA")
+    FIXES=$(wc -l < "$GPSLOG")
     SIZE=$(du -h "$PCAP_SRC" 2>/dev/null | cut -f1)
-    LOG "Recording ${SIZE:-0} pcap, GPS: $GPS_SRC ($FIXES fixes)"
+    LOG "Recording ${SIZE:-0} pcap, GPS fixes: $FIXES"
 done

@@ -4,8 +4,9 @@ AirTrace - classify 802.11 devices from a Pager capture and geotag them.
 
 Input  (one session folder written by pager/airtrace/payload.sh):
     capture.pcap   raw monitor-mode capture (radiotap); .pcapng also works
-    gps.nmea       RMC sentences from the Pager's GPS, optionally prefixed
-                   with the Pager's system time: "<epoch> $GPRMC,..."
+    gps.log        GPS_GET samples: "<pager epoch> <lat> <lon> <alt> <speed>"
+                   (older sessions: gps.nmea with RMC sentences, optionally
+                   prefixed with the Pager's time: "<epoch> $GPRMC,...")
 
 Output (written into the same folder):
     devices-<date>.csv   one row per MAC
@@ -146,6 +147,42 @@ def parse_rmc(line):
         return None
 
 
+def parse_gpslog(line):
+    """'<epoch> <lat> <lon> [alt] [speed]' -> (epoch, lat, lon, speed), or None."""
+    parts = line.split()
+    if len(parts) < 3:
+        return None
+    try:
+        epoch, lat, lon = float(parts[0]), float(parts[1]), float(parts[2])
+        speed = float(parts[4]) if len(parts) > 4 else 0.0
+    except ValueError:
+        return None
+    if (lat == 0 and lon == 0) or not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        return None
+    return epoch, lat, lon, speed
+
+
+def load_gpslog(path):
+    """Track from gps.log. Times are Pager clock = pcap clock, so no offset."""
+    points = []
+    with open(path, errors="replace") as fh:
+        for line in fh:
+            fix = parse_gpslog(line)
+            if fix:
+                points.append(fix)
+    return thin_track(points)
+
+
+def thin_track(points):
+    points.sort(key=lambda p: p[0])
+    thinned, last = [], None
+    for p in points:
+        if last is None or p[0] - last >= TRACK_INTERVAL_S:
+            thinned.append(p)
+            last = p[0]
+    return thinned
+
+
 def load_track(nmea_path):
     """
     Parse the NMEA log and thin it to one point per second.
@@ -162,14 +199,8 @@ def load_track(nmea_path):
                 points.append(fix[:4])
                 if fix[4] is not None:
                     offsets.append(fix[0] - fix[4])
-    points.sort(key=lambda p: p[0])
-    thinned, last = [], None
-    for p in points:
-        if last is None or p[0] - last >= TRACK_INTERVAL_S:
-            thinned.append(p)
-            last = p[0]
     offset = statistics.median(offsets) if offsets else 0.0
-    return thinned, offset
+    return thin_track(points), offset
 
 
 class Geo:
@@ -365,7 +396,8 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("session", help="session folder from the Pager (loot/<name>)")
     ap.add_argument("--no-clock-fix", action="store_true",
-                    help="do not correct pcap timestamps by the Pager-vs-GPS clock offset")
+                    help="(gps.nmea sessions only) do not correct pcap timestamps "
+                         "by the Pager-vs-GPS clock offset")
     args = ap.parse_args()
 
     session = os.path.abspath(args.session)
@@ -377,9 +409,11 @@ def main():
         print(f"warning: several captures found, using {os.path.basename(pcaps[0])}",
               file=sys.stderr)
     pcap = pcaps[0]
-    nmea = os.path.join(session, "gps.nmea")
-
-    track, offset = load_track(nmea)
+    gpslog = os.path.join(session, "gps.log")
+    if os.path.exists(gpslog):
+        track, offset = load_gpslog(gpslog), 0.0
+    else:
+        track, offset = load_track(os.path.join(session, "gps.nmea"))
     if not track:
         print("warning: no valid GPS fixes; coordinates will be empty", file=sys.stderr)
     if args.no_clock_fix or abs(offset) < CLOCK_SKEW_MIN_S:

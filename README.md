@@ -6,7 +6,7 @@ works out who was where.
 ```
 Pager (pager/airtrace/payload.sh)   PC (pc/airtrace.py)
   monitor-mode capture  ──► capture.pcap ─┐
-  GPS RMC sentences     ──► gps.nmea ─────┴─► devices-<date>.csv
+  GPS_GET every second  ──► gps.log ──────┴─► devices-<date>.csv
                                               devices-<date>.kml  (Google Earth / QGIS)
                                               track-<date>.csv
 ```
@@ -25,15 +25,16 @@ Nothing is transmitted: no deauth, no probes, no association.
 
 1. Copy the `pager/airtrace/` folder to the Pager's payload directory, e.g.
    `payloads/user/recon/airtrace/payload.sh`.
-2. Before the first field run, check the argument syntax of `LOG`,
-   `WIFI_PCAP_START` and `WIFI_PCAP_STOP` on your firmware (lines marked (1), (2), (3)).
-3. GPS: `gpsd` is used if it is running, otherwise the first `/dev/ttyACM*` / `/dev/ttyUSB*`.
-   Serial baud rate comes from `GPS_BAUD` (default 9600).
+2. GPS: the payload reads the receiver through the Pager's own `GPS_GET`
+   (pineapd owns the serial port, so the port cannot be read directly).
+   Select the GPS once with `GPS_LIST` / `GPS_CONFIGURE PINEAP <device>`.
+3. The capture is started with `WIFI_PCAP_START` (pineapd chooses the file);
+   on stop the file is moved into the session folder as `capture.pcap`.
 4. Stop the payload from the Pager menu (it sends INT); the capture is closed cleanly.
 
-Each GPS line is saved as `<Pager epoch> $GPRMC,...`. If the Pager clock is
-wrong (no RTC, no NTP in the field), `airtrace.py` sees the offset against GPS
-time and shifts the pcap timestamps.
+Session folder: `capture.pcap`, `gps.log` (`<epoch> <lat> <lon> <alt> <speed>`,
+only samples with a fix), `pcap_source.txt` (where pineapd wrote the pcap).
+GPS and pcap timestamps both come from the Pager clock, so they always line up.
 
 ## PC side
 
@@ -46,7 +47,8 @@ No build step: it is a plain Python 3 script. On Linux you only need
 `python3` and Scapy (`pip install scapy`, or `sudo apt install python3-scapy`
 on Debian/Ubuntu).
 
-Options: `--no-clock-fix` turns off the Pager clock correction.
+Older sessions with `gps.nmea` are still supported (`--no-clock-fix` turns off
+the Pager-vs-GPS clock correction for them).
 
 ### Classification (per MAC, highest rank wins)
 
@@ -61,7 +63,7 @@ locally-administered bit is set (a randomized MAC on phones).
 
 ### Coordinates
 
-A device's point is the GPS fix (within ±10 s) at the moment of its
+A device's point is the GPS sample (within ±10 s) at the moment of its
 **strongest own** frame. RSSI is taken only from frames the device itself
 transmitted, so a client is never placed by its AP's signal.
 
