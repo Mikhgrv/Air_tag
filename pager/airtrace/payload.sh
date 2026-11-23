@@ -3,18 +3,19 @@
 # Description: Passively records 802.11 frames to a pcap and raw GPS NMEA.
 #              Classification and geotagging are done on the PC (pc/airtrace.py).
 # Author: (you)
-# Version: 0.2
+# Version: 0.3
 #
 # Transmits nothing. Only a monitor-mode capture and a GPS log.
 #
-# NOTE: the DuckyScript-style helpers (LOG, WIFI_PCAP_START, WIFI_PCAP_STOP)
-# are used as named in the spec. Check their argument syntax on your Pager
-# firmware before the first field run and adjust the three marked lines.
+# Pager helpers used: LOG, WIFI_PCAP_START, WIFI_PCAP_STOP.
+# WIFI_PCAP_START takes no arguments: pineapd picks the file and the command
+# prints its name. We move that file into the session folder on stop.
 
 LOOT_ROOT="${LOOT_ROOT:-/root/loot}"   # Pager runs payloads without $HOME
 SESSION="airtrace-$(date -u +%Y%m%dT%H%M%SZ)"
 LOOT="$LOOT_ROOT/$SESSION"
-PCAP="$LOOT/capture.pcap"
+PCAP="$LOOT/capture.pcap"        # final location after stop
+PCAP_SRC=""                      # file pineapd is writing while recording
 NMEA="$LOOT/gps.nmea"
 GPS_BAUD="${GPS_BAUD:-9600}"     # u-blox default; some modules use 4800/38400
 
@@ -43,8 +44,16 @@ cleanup() {
         pkill -P "$GPS_PID" 2>/dev/null   # gpspipe / reader inside the subshell
         kill "$GPS_PID" 2>/dev/null
     fi
-    WIFI_PCAP_STOP                                   # (1) stop capture
+    WIFI_PCAP_STOP
     sync
+    if [ -n "$PCAP_SRC" ] && [ -f "$PCAP_SRC" ]; then
+        case "$PCAP_SRC" in
+            *.pcapng) PCAP="${PCAP%.pcap}.pcapng" ;;
+        esac
+        mv "$PCAP_SRC" "$PCAP" && sync
+    else
+        LOG "WARNING: pcap file not found: ${PCAP_SRC:-<none>}"
+    fi
     LOG "Session saved: $LOOT"
     exit 0
 }
@@ -68,16 +77,22 @@ fi
 LOG "GPS source: $GPS_SRC"
 
 # --- Capture --------------------------------------------------------------
-# (2) start monitor-mode capture to $PCAP. Argument form per spec; verify.
-WIFI_PCAP_START "$PCAP"
+# WIFI_PCAP_START prints the capture file name (path may be relative).
+PCAP_SRC=$(WIFI_PCAP_START 2>&1 | tail -n1)
+if [ -n "$PCAP_SRC" ] && [ "${PCAP_SRC#/}" = "$PCAP_SRC" ] && [ ! -f "$PCAP_SRC" ]; then
+    FOUND=$(find /root/loot /mmc/root/loot /tmp -name "$(basename "$PCAP_SRC")" 2>/dev/null | head -n1)
+    [ -n "$FOUND" ] && PCAP_SRC="$FOUND"
+fi
+echo "$PCAP_SRC" > "$LOOT/pcap_source.txt"
 LOG "Recording: $SESSION"
+LOG "pcap: ${PCAP_SRC:-<WIFI_PCAP_START failed>}"
 
 # Keep the payload alive until the user stops it. Pager stops it with INT.
 # "sleep & wait" lets the trap fire immediately instead of after the sleep.
 while true; do
     sleep 5 &
     wait $!
-    # (3) optional status line for the Pager screen
     FIXES=$(wc -l < "$NMEA")
-    LOG "Recording $(du -h "$PCAP" 2>/dev/null | cut -f1) pcap, GPS: $GPS_SRC ($FIXES fixes)"
+    SIZE=$(du -h "$PCAP_SRC" 2>/dev/null | cut -f1)
+    LOG "Recording ${SIZE:-0} pcap, GPS: $GPS_SRC ($FIXES fixes)"
 done
