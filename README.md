@@ -6,7 +6,8 @@ works out who was where.
 ```
 Pager (pager/airtrace/payload.sh)   PC (pc/airtrace.py)
   monitor-mode capture  ──► capture.pcap ─┐
-  GPS_GET every second  ──► gps.log ──────┴─► devices-<date>.csv
+  GPS_GET every second  ──► gps.log ──────┴─► devices-<date>.html (interactive map)
+                                              devices-<date>.csv
                                               devices-<date>.kml  (Google Earth / QGIS)
                                               track-<date>.csv
 ```
@@ -20,6 +21,7 @@ Nothing is transmitted: no deauth, no probes, no association.
 | `pager/airtrace/payload.sh` | Pager | Writes a pcap and a GPS log into `/root/loot/airtrace-<UTC time>/` |
 | `pager/gps_check/payload.sh` | Pager | Shows the GPS position every 2 s, records nothing (check the fix before a run) |
 | `pc/airtrace.py` | PC | Classifies MACs, geotags them, builds the CSV / KML |
+| `pc/map_template.html` | PC | Page template for the interactive map |
 | `pc/requirements.txt` | PC | `scapy` |
 
 ## Pager side
@@ -50,6 +52,20 @@ on Debian/Ubuntu).
 
 Older sessions with `gps.nmea` are still supported (`--no-clock-fix` turns off
 the Pager-vs-GPS clock correction for them).
+
+### Interactive map (`devices-<date>.html`)
+
+Open it in a browser (`xdg-open devices-<date>.html`); it needs internet for the
+map tiles and the Leaflet library.
+
+- Only access points are drawn at first: red Wi-Fi markers, the small number is
+  the client count, hovering shows the SSID. No MAC labels on the map.
+- Click an AP (on the map or in the side list): its clients appear as green
+  points with dashed lines to the AP, and the popup lists them.
+- Probing (not connected) devices are grouped into blue counted bubbles; click
+  one to list the devices in it and the networks they are looking for.
+- Side panel: search by MAC or SSID, option to hide random-MAC probing devices.
+- Layers button: satellite / street map, all clients, walk track.
 
 ### Classification (per MAC, highest rank wins)
 

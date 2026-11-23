@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<style>
+:root {
+  --ap: #e5484d; --client: #30a46c; --probe: #3e63dd; --track: #f5a524;
+  --bg: #ffffff; --panel: #f7f7f8; --text: #1c1c1f; --muted: #6f6f78; --line: #e2e2e6;
+  --hover: #ececf0; --sel: #fde8e8;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #18181b; --panel: #1f1f23; --text: #ececef; --muted: #9a9aa3;
+          --line: #2e2e33; --hover: #2a2a30; --sel: #3b1f22; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+#app { display: flex; height: 100%; }
+#side { width: 330px; display: flex; flex-direction: column; background: var(--panel);
+  border-right: 1px solid var(--line); }
+#map { flex: 1; }
+header { padding: 12px 14px 8px; border-bottom: 1px solid var(--line); }
+h1 { font-size: 15px; margin: 0 0 6px; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0; }
+.stat { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; }
+.stat b { display: block; font-size: 16px; font-variant-numeric: tabular-nums; }
+.stat span { color: var(--muted); font-size: 11px; }
+.stat.ap b { color: var(--ap); } .stat.cl b { color: var(--client); } .stat.pr b { color: var(--probe); }
+input[type=search] { width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg); color: var(--text); font: inherit; }
+label.opt { display: flex; gap: 6px; align-items: center; margin-top: 7px; color: var(--muted); cursor: pointer; }
+#listHead { padding: 8px 14px 4px; color: var(--muted); font-size: 11px; text-transform: uppercase;
+  letter-spacing: .04em; }
+#list { flex: 1; overflow: auto; padding: 0 6px 10px; }
+.item { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.item:hover { background: var(--hover); }
+.item.sel { background: var(--sel); }
+.item .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; }
+.item .main { flex: 1; min-width: 0; }
+.item .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item .sub { color: var(--muted); font-size: 11px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.item .cnt { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+.empty { color: var(--muted); padding: 10px 8px; }
+
+/* markers */
+.mk { border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.45); }
+.mk-ap { width: 26px; height: 26px; background: var(--ap); display: flex; align-items: center;
+  justify-content: center; position: relative; }
+.mk-ap svg { width: 15px; height: 15px; }
+.mk-ap .n { position: absolute; top: -7px; right: -9px; min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 8px; background: #fff; color: var(--client); font: 700 10px/16px system-ui, sans-serif;
+  text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+.mk-ap.sel { outline: 3px solid #ffd60a; outline-offset: 1px; }
+.mk-cl { width: 14px; height: 14px; background: var(--client); }
+.mk-pr { width: 12px; height: 12px; background: var(--probe); }
+.cl-pr, .cl-ap, .cl-cl { border-radius: 50%; color: #fff; font: 700 12px system-ui, sans-serif; display: flex;
+  align-items: center; justify-content: center; border: 2px solid #fff; box-shadow: 0 1px 5px rgba(0,0,0,.5); }
+.cl-pr { background: var(--probe); }
+.cl-ap { background: var(--ap); }
+.cl-cl { background: var(--client); }
+/* while an AP is selected, fade the probing layer so its clients stand out */
+#map.focus .cl-pr, #map.focus .mk-pr { opacity: .25; }
+
+/* popups */
+.leaflet-popup-content { margin: 10px 12px; font-size: 12.5px; min-width: 220px; }
+.pp h3 { margin: 0 0 4px; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+.pp .tag { font-size: 10px; font-weight: 700; color: #fff; border-radius: 4px; padding: 1px 5px; }
+.pp table { border-collapse: collapse; width: 100%; }
+.pp td { padding: 1px 0; vertical-align: top; }
+.pp td:first-child { color: #777; padding-right: 10px; white-space: nowrap; }
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+.pp .lst { max-height: 220px; overflow: auto; margin-top: 6px; border-top: 1px solid #ddd; padding-top: 4px; }
+.pp .row { padding: 3px 0; border-bottom: 1px solid #eee; }
+.pp .row:last-child { border-bottom: none; }
+.pp .row small { color: #777; }
+.pp a { cursor: pointer; }
+
+.legend { background: var(--bg); color: var(--text); padding: 8px 10px; border-radius: 6px;
+  box-shadow: 0 1px 5px rgba(0,0,0,.35); font-size: 12px; line-height: 1.7; }
+.legend i { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 6px;
+  vertical-align: -1px; border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
+.legend .trk { width: 16px; height: 3px; border-radius: 2px; border: none; box-shadow: none; vertical-align: 3px; }
+
+@media (max-width: 760px) {
+  #app { flex-direction: column-reverse; }
+  #side { width: 100%; height: 42%; border-right: none; border-top: 1px solid var(--line); }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <header>
+      <h1 id="title"></h1>
+      <div class="stats">
+        <div class="stat ap"><b id="sAp">0</b><span>access points</span></div>
+        <div class="stat cl"><b id="sCl">0</b><span>clients</span></div>
+        <div class="stat pr"><b id="sPr">0</b><span>probing</span></div>
+      </div>
+      <input id="q" type="search" placeholder="Search MAC or SSID…" autocomplete="off">
+      <label class="opt"><input type="checkbox" id="hideRnd"> Hide random-MAC probing devices</label>
+    </header>
+    <div id="listHead"></div>
+    <div id="list"></div>
+  </aside>
+  <div id="map"></div>
+</div>
+
+<script id="data" type="application/json">__DATA__</script>
+<script>
+(function () {
+  "use strict";
+  const DATA = JSON.parse(document.getElementById("data").textContent);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g,
+    c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const WIFI_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" ' +
+    'stroke-linecap="round"><path d="M2 8.8a15 15 0 0 1 20 0"/><path d="M5.5 12.5a10 10 0 0 1 13 0"/>' +
+    '<path d="M9 16.1a5 5 0 0 1 6 0"/><circle cx="12" cy="19.6" r="1.2" fill="#fff"/></svg>';
+
+  document.getElementById("title").textContent = DATA.title;
+
+  // ---------------------------------------------------------------- data --
+  const devs = DATA.devices;
+  const byMac = new Map(devs.map(d => [d.mac, d]));
+  const aps = devs.filter(d => d.type === "AP");
+  const clients = devs.filter(d => d.type === "ASSOCIATED");
+  const probes = devs.filter(d => d.type === "PROBING");
+  const clientsOf = new Map(aps.map(a => [a.mac, []]));
+  clients.forEach(c => { if (clientsOf.has(c.bssid)) clientsOf.get(c.bssid).push(c); });
+  const has = d => d.lat != null && d.lon != null;
+  const ll = d => [d.lat, d.lon];
+
+  document.getElementById("sAp").textContent = aps.length;
+  document.getElementById("sCl").textContent = clients.length;
+  document.getElementById("sPr").textContent = probes.length;
+
+  const apName = a => a.ssid && a.ssid !== "(hidden)" ? a.ssid : "(hidden network)";
+  const rssiTxt = d => d.rssi == null ? "—" : d.rssi + " dBm";
+  const seenTxt = d => d.first === d.last ? esc(d.first) : esc(d.first) + " → " + esc(d.last.slice(11));
+
+  // ----------------------------------------------------------------- map --
+  const map = L.map("map", { zoomControl: true, preferCanvas: false });
+  const sat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    { maxZoom: 20, maxNativeZoom: 19, attribution: "Imagery &copy; Esri" });
+  const osm = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    { maxZoom: 20, maxNativeZoom: 19, attribution: "&copy; OpenStreetMap contributors" });
+  sat.addTo(map);
+
+  // --------------------------------------------------------------- popups --
+  function apPopup(a) {
+    const cl = clientsOf.get(a.mac) || [];
+    let h = '<div class="pp"><h3><span class="tag" style="background:var(--ap)">AP</span>' +
+      esc(apName(a)) + '</h3><table>' +
+      '<tr><td>BSSID</td><td class="mono">' + esc(a.mac) + '</td></tr>' +
+      '<tr><td>Signal</td><td>' + rssiTxt(a) + '</td></tr>' +
+      '<tr><td>Seen</td><td>' + seenTxt(a) + '</td></tr>' +
+      '<tr><td>Packets</td><td>' + a.pkts + '</td></tr>' +
+      '<tr><td>Clients</td><td><b>' + cl.length + '</b></td></tr></table>';
+    if (cl.length) {
+      h += '<div class="lst">' + cl.map(c =>
+        '<div class="row"><span class="mono">' + esc(c.mac) + '</span>' +
+        (c.rnd ? ' <small>random</small>' : '') + '<br><small>' + rssiTxt(c) +
+        (has(c) ? '' : ' · no GPS') + '</small></div>').join("") + '</div>';
+    }
+    return h + '</div>';
+  }
+  function clientPopup(c) {
+    const a = byMac.get(c.bssid);
+    return '<div class="pp"><h3><span class="tag" style="background:var(--client)">CLIENT</span>' +
+      '<span class="mono">' + esc(c.mac) + '</span></h3><table>' +
+      '<tr><td>Connected to</td><td>' + (a ? esc(apName(a)) + '<br>' : '') +
+      '<span class="mono">' + esc(c.bssid || "—") + '</span></td></tr>' +
+      '<tr><td>Random MAC</td><td>' + (c.rnd ? "yes" : "no") + '</td></tr>' +
+      '<tr><td>Signal</td><td>' + rssiTxt(c) + '</td></tr>' +
+      '<tr><td>Seen</td><td>' + seenTxt(c) + '</td></tr></table></div>';
+  }
+  function probeRow(p) {
+    return '<div class="row"><span class="mono">' + esc(p.mac) + '</span>' +
+      (p.rnd ? ' <small>random</small>' : '') + ' <small>' + rssiTxt(p) + '</small><br>' +
+      '<small>looking for: ' + esc(p.probed.join(", ") || "—") + '</small></div>';
+  }
+  function probePopup(p) {
+    return '<div class="pp"><h3><span class="tag" style="background:var(--probe)">PROBING</span>' +
+      '<span class="mono">' + esc(p.mac) + '</span></h3><table>' +
+      '<tr><td>Looking for</td><td>' + esc(p.probed.join(", ") || "—") + '</td></tr>' +
+      '<tr><td>Random MAC</td><td>' + (p.rnd ? "yes" : "no") + '</td></tr>' +
+      '<tr><td>Signal</td><td>' + rssiTxt(p) + '</td></tr>' +
+      '<tr><td>Seen</td><td>' + seenTxt(p) + '</td></tr></table></div>';
+  }
+
+  // ---------------------------------------------------------------- icons --
+  function apIcon(a, selected) {
+    const n = (clientsOf.get(a.mac) || []).length;
+    return L.divIcon({ className: "", iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -12],
+      html: '<div class="mk mk-ap' + (selected ? " sel" : "") + '">' + WIFI_SVG +
+            (n ? '<span class="n">' + n + '</span>' : '') + '</div>' });
+  }
+  const clIcon = L.divIcon({ className: "", iconSize: [14, 14], iconAnchor: [7, 7], html: '<div class="mk mk-cl"></div>' });
+  const prIcon = L.divIcon({ className: "", iconSize: [12, 12], iconAnchor: [6, 6], html: '<div class="mk mk-pr"></div>' });
+  const bubble = (cls, n) => {
+    const s = n < 10 ? 28 : n < 100 ? 34 : 40;
+    return L.divIcon({ className: "", iconSize: [s, s],
+      html: '<div class="' + cls + '" style="width:' + s + 'px;height:' + s + 'px">' + n + '</div>' });
+  };
+
+  // -------------------------------------------------------------- layers --
+  const apLayer = L.markerClusterGroup({ maxClusterRadius: 28, showCoverageOnHover: false,
+    spiderfyDistanceMultiplier: 1.6, iconCreateFunction: c => bubble("cl-ap", c.getChildCount()) });
+  const apMarkers = new Map();
+  aps.filter(has).forEach(a => {
+    const m = L.marker(ll(a), { icon: apIcon(a, false), riseOnHover: true, zIndexOffset: 1000 });
+    m.bindTooltip(esc(apName(a)), { direction: "top", offset: [0, -12] });
+    m.bindPopup(() => apPopup(a), { maxWidth: 320 });
+    m.on("click", () => selectAp(a.mac, false));
+    apMarkers.set(a.mac, m);
+    apLayer.addLayer(m);
+  });
+  apLayer.addTo(map);
+
+  // probing devices: clusters; clicking a cluster lists its devices
+  const prLayer = L.markerClusterGroup({ maxClusterRadius: 60, showCoverageOnHover: false,
+    zoomToBoundsOnClick: false, spiderfyOnMaxZoom: false,
+    iconCreateFunction: c => bubble("cl-pr", c.getChildCount()) });
+  function buildProbes() {
+    prLayer.clearLayers();
+    const hide = document.getElementById("hideRnd").checked;
+    probes.filter(p => has(p) && !(hide && p.rnd)).forEach(p => {
+      const m = L.marker(ll(p), { icon: prIcon });
+      m.bindPopup(() => probePopup(p), { maxWidth: 320 });
+      m._dev = p;
+      prLayer.addLayer(m);
+    });
+  }
+  prLayer.on("clusterclick", e => {
+    const list = e.layer.getAllChildMarkers().map(m => m._dev)
+      .sort((x, y) => (y.rssi ?? -999) - (x.rssi ?? -999));
+    const head = '<div class="pp"><h3><span class="tag" style="background:var(--probe)">PROBING</span>' +
+      list.length + ' devices here</h3><small>Not connected to any network. ' +
+      '<a id="zoomIn">Zoom in</a></small><div class="lst">';
+    L.popup({ maxWidth: 340 }).setLatLng(e.layer.getLatLng())
+      .setContent(head + list.map(probeRow).join("") + '</div></div>').openOn(map);
+    const z = document.getElementById("zoomIn");
+    if (z) z.onclick = () => { map.closePopup(); e.layer.zoomToBounds({ padding: [40, 40] }); };
+  });
+  buildProbes();
+  prLayer.addTo(map);
+  document.getElementById("hideRnd").addEventListener("change", buildProbes);
+
+  // all clients (off by default; selecting an AP shows its own clients)
+  const allClLayer = L.markerClusterGroup({ maxClusterRadius: 40, showCoverageOnHover: false,
+    iconCreateFunction: c => bubble("cl-cl", c.getChildCount()) });
+  clients.filter(has).forEach(c => {
+    allClLayer.addLayer(L.marker(ll(c), { icon: clIcon }).bindPopup(() => clientPopup(c)));
+  });
+
+  // track
+  const trackLayer = L.polyline(DATA.track, { color: getComputedStyle(document.documentElement)
+    .getPropertyValue("--track").trim() || "#f5a524", weight: 3, opacity: .85 });
+  if (DATA.track.length > 1) trackLayer.addTo(map);
+
+  L.control.layers({ "Satellite": sat, "Map": osm }, {
+    "Access points": apLayer, "Probing devices": prLayer,
+    "All clients": allClLayer, "Walk track": trackLayer }, { collapsed: true }).addTo(map);
+
+  const legend = L.control({ position: "bottomright" });
+  legend.onAdd = () => {
+    const d = L.DomUtil.create("div", "legend");
+    d.innerHTML = '<i style="background:var(--ap)"></i>Access point (number = clients)<br>' +
+      '<i style="background:var(--client)"></i>Client (click an AP to show)<br>' +
+      '<i style="background:var(--probe)"></i>Probing, not connected<br>' +
+      '<i class="trk" style="background:var(--track)"></i>Walk track';
+    return d;
+  };
+  legend.addTo(map);
+
+  // ----------------------------------------------------------- selection --
+  const selLayer = L.layerGroup().addTo(map);
+  const mapEl = document.getElementById("map");
+  let selected = null;
+  function clearSel() {
+    if (selected && apMarkers.has(selected)) apMarkers.get(selected).setIcon(apIcon(byMac.get(selected), false));
+    selected = null; selLayer.clearLayers(); mapEl.classList.remove("focus"); renderList();
+  }
+  function selectAp(mac, fly) {
+    const a = byMac.get(mac);
+    if (!a) return;
+    if (selected && selected !== mac && apMarkers.has(selected))
+      apMarkers.get(selected).setIcon(apIcon(byMac.get(selected), false));
+    selected = mac; selLayer.clearLayers(); mapEl.classList.add("focus");
+    const m = apMarkers.get(mac);
+    const pts = [];
+    if (m) { m.setIcon(apIcon(a, true)); pts.push(ll(a)); }
+    (clientsOf.get(mac) || []).filter(has).forEach(c => {
+      if (has(a)) L.polyline([ll(a), ll(c)], { color: "#30a46c", weight: 2, dashArray: "4 5", opacity: .9 }).addTo(selLayer);
+      L.marker(ll(c), { icon: clIcon, zIndexOffset: 500 }).bindPopup(() => clientPopup(c)).addTo(selLayer);
+      pts.push(ll(c));
+    });
+    if (fly && pts.length) {
+      if (pts.length > 1) map.fitBounds(pts, { padding: [60, 60], maxZoom: 19 });
+      else map.setView(pts[0], Math.max(map.getZoom(), 18));
+      if (m) apLayer.zoomToShowLayer(m, () => m.openPopup());
+    }
+    renderList();
+  }
+  map.on("click", clearSel);
+
+  // ---------------------------------------------------------- side list --
+  const q = document.getElementById("q");
+  const list = document.getElementById("list");
+  const listHead = document.getElementById("listHead");
+  const color = { AP: "var(--ap)", ASSOCIATED: "var(--client)", PROBING: "var(--probe)" };
+
+  function item(d) {
+    const el = document.createElement("div");
+    el.className = "item" + (d.mac === selected ? " sel" : "");
+    let name, sub, cnt = "";
+    if (d.type === "AP") {
+      name = apName(d); sub = d.mac; cnt = (clientsOf.get(d.mac) || []).length + " cl";
+    } else if (d.type === "ASSOCIATED") {
+      const a = byMac.get(d.bssid);
+      name = "Client → " + (a ? apName(a) : (d.bssid || "?")); sub = d.mac;
+    } else {
+      name = "Probing: " + (d.probed.join(", ") || "—"); sub = d.mac;
+    }
+    el.innerHTML = '<span class="dot" style="background:' + color[d.type] + '"></span>' +
+      '<div class="main"><div class="name">' + esc(name) + '</div><div class="sub">' + esc(sub) +
+      (has(d) ? '' : ' · no GPS') + ' · ' + esc(rssiTxt(d)) + '</div></div>' +
+      (cnt ? '<span class="cnt">' + esc(cnt) + '</span>' : '');
+    el.onclick = () => focus(d);
+    return el;
+  }
+  function focus(d) {
+    if (d.type === "AP") return selectAp(d.mac, true);
+    if (d.type === "ASSOCIATED" && byMac.has(d.bssid)) return selectAp(d.bssid, true);
+    if (!has(d)) return;
+    map.setView(ll(d), Math.max(map.getZoom(), 19));
+    L.popup({ maxWidth: 320 }).setLatLng(ll(d))
+      .setContent(d.type === "PROBING" ? probePopup(d) : clientPopup(d)).openOn(map);
+  }
+  function renderList() {
+    const term = q.value.trim().toLowerCase();
+    let rows;
+    if (!term) {
+      rows = aps.slice().sort((x, y) => (clientsOf.get(y.mac).length - clientsOf.get(x.mac).length) ||
+        ((y.rssi ?? -999) - (x.rssi ?? -999)));
+      listHead.textContent = "Access points (" + rows.length + ")";
+    } else {
+      const match = d => d.mac.includes(term) || (d.ssid || "").toLowerCase().includes(term) ||
+        d.probed.some(s => s.toLowerCase().includes(term));
+      const order = { AP: 0, ASSOCIATED: 1, PROBING: 2 };
+      rows = devs.filter(match).sort((x, y) => order[x.type] - order[y.type]);
+      listHead.textContent = rows.length + " match" + (rows.length === 1 ? "" : "es");
+    }
+    list.replaceChildren(...rows.slice(0, 300).map(item));
+    if (!rows.length) list.innerHTML = '<div class="empty">Nothing found.</div>';
+  }
+  q.addEventListener("input", renderList);
+  renderList();
+
+  // ---------------------------------------------------------------- view --
+  const all = devs.filter(has).map(ll).concat(DATA.track);
+  if (all.length) map.fitBounds(all, { padding: [30, 30], maxZoom: 19 });
+  else map.setView([0, 0], 2);
+})();
+</script>
+</body>
+</html>

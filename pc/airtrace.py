@@ -10,6 +10,8 @@ Input  (one session folder written by pager/airtrace/payload.sh):
 
 Output (written into the same folder):
     devices-<date>.csv   one row per MAC
+    devices-<date>.html  interactive map: click an AP to see its clients,
+                         probing devices grouped into counted clusters
     devices-<date>.kml   three layers (AP / ASSOCIATED / PROBING)
     track-<date>.csv     GPS track, one point per second
 
@@ -30,6 +32,7 @@ import bisect
 import csv
 import glob
 import html
+import json
 import os
 import statistics
 import sys
@@ -368,7 +371,8 @@ def write_kml(path, rows, title):
     ]
     for kind in ("AP", "ASSOCIATED", "PROBING"):
         out.append(f"<Style id='{kind}'><IconStyle><color>{KML_COLOR[kind]}</color>"
-                   f"<scale>0.7</scale></IconStyle></Style>")
+                   f"<scale>0.7</scale></IconStyle>"
+                   f"<LabelStyle><scale>0</scale></LabelStyle></Style>")   # no MAC labels
     for kind in ("AP", "ASSOCIATED", "PROBING"):
         layer = [r for r in rows if r["Type"] == kind and r["Lat"] and r["Lon"]]
         out.append(f"<Folder><name>{kind} ({len(layer)})</name>")
@@ -387,6 +391,41 @@ def write_kml(path, rows, title):
     out.append("</Document></kml>")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(out))
+
+
+MAP_TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "map_template.html")
+MAX_TRACK_POINTS = 5000
+
+
+def write_html(path, rows, track, title):
+    """Interactive Leaflet map (needs internet for map tiles and Leaflet)."""
+    devices = []
+    for r in rows:
+        kind = r["Type"]
+        devices.append({
+            "mac": r["MAC"],
+            "type": kind,
+            "rnd": r["RandomMAC"] == "yes",
+            "ssid": r["SSID/Probed"] if kind == "AP" else "",
+            "probed": r["SSID/Probed"].split("; ") if kind == "PROBING" and r["SSID/Probed"] else [],
+            "bssid": r["ConnectedBSSID"],
+            "first": r["FirstSeenUTC"],
+            "last": r["LastSeenUTC"],
+            "pkts": r["Packets"],
+            "rssi": r["BestRSSI"] if r["BestRSSI"] != "" else None,
+            "lat": float(r["Lat"]) if r["Lat"] else None,
+            "lon": float(r["Lon"]) if r["Lon"] else None,
+        })
+    step = max(1, len(track) // MAX_TRACK_POINTS)
+    pts = [[round(p[1], 6), round(p[2], 6)] for p in track[::step]]
+    data = json.dumps({"title": title, "devices": devices, "track": pts},
+                      ensure_ascii=False, separators=(",", ":"))
+    data = data.replace("</", "<\\/")          # keep </script> inside SSIDs harmless
+    with open(MAP_TEMPLATE, encoding="utf-8") as fh:
+        page = fh.read()
+    page = page.replace("__TITLE__", html.escape(title)).replace("__DATA__", data)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(page)
 
 
 # ------------------------------------------------------------------- main --
@@ -433,6 +472,7 @@ def main():
     base = os.path.join(session, f"devices-{stamp}")
     write_csv(base + ".csv", rows)
     write_kml(base + ".kml", rows, f"AirTrace {stamp}")
+    write_html(base + ".html", rows, track, f"AirTrace {stamp}")
     if track:
         write_track_csv(os.path.join(session, f"track-{stamp}.csv"), track)
 
@@ -441,7 +481,9 @@ def main():
     print(f"devices: {len(rows)}  AP={counts['AP']}  "
           f"ASSOCIATED={counts['ASSOCIATED']}  PROBING={counts['PROBING']}  "
           f"geotagged={located}")
-    print(f"wrote: {base}.csv, {base}.kml" + (f", track-{stamp}.csv" if track else ""))
+    print(f"wrote: {base}.html, {base}.csv, {base}.kml" +
+          (f", track-{stamp}.csv" if track else ""))
+    print(f"open the map: xdg-open '{base}.html'")
 
 
 if __name__ == "__main__":
