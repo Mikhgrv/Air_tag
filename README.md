@@ -4,7 +4,7 @@ Passive Wi-Fi recon with GPS for the Pager: the device only **listens**, and the
 works out who was where.
 
 ```
-Pager (payload/payload.sh)          PC (airtrace.py)
+Pager (pager/airtrace/payload.sh)   PC (pc/airtrace.py)
   monitor-mode capture  ──► capture.pcap ─┐
   GPS RMC sentences     ──► gps.nmea ─────┴─► devices-<date>.csv
                                               devices-<date>.kml  (Google Earth / QGIS)
@@ -17,13 +17,13 @@ Nothing is transmitted: no deauth, no probes, no association.
 
 | File | Where it runs | What it does |
 |---|---|---|
-| `payload/payload.sh` | Pager | Writes a pcap and a GPS log into `~/loot/airtrace-<UTC time>/` |
-| `airtrace.py` | PC | Classifies MACs, geotags them, builds the CSV / KML |
-| `requirements.txt` | PC | `scapy` |
+| `pager/airtrace/payload.sh` | Pager | Writes a pcap and a GPS log into `~/loot/airtrace-<UTC time>/` |
+| `pc/airtrace.py` | PC | Classifies MACs, geotags them, builds the CSV / KML |
+| `pc/requirements.txt` | PC | `scapy` |
 
 ## Pager side
 
-1. Copy the `payload/` folder to the Pager's payload directory, e.g.
+1. Copy the `pager/airtrace/` folder to the Pager's payload directory, e.g.
    `payloads/user/recon/airtrace/payload.sh`.
 2. Before the first field run, check the argument syntax of `LOG`,
    `WIFI_PCAP_START` and `WIFI_PCAP_STOP` on your firmware (lines marked (1), (2), (3)).
@@ -38,9 +38,13 @@ time and shifts the pcap timestamps.
 ## PC side
 
 ```bash
-pip install -r requirements.txt
-python3 airtrace.py path/to/loot/airtrace-20261120T120000Z
+pip install -r pc/requirements.txt
+./pc/airtrace.py path/to/loot/airtrace-20261120T120000Z
 ```
+
+No build step: it is a plain Python 3 script. On Linux you only need
+`python3` and Scapy (`pip install scapy`, or `sudo apt install python3-scapy`
+on Debian/Ubuntu).
 
 Options: `--no-clock-fix` turns off the Pager clock correction.
 

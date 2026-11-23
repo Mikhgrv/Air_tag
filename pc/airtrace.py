@@ -2,7 +2,7 @@
 """
 AirTrace - classify 802.11 devices from a Pager capture and geotag them.
 
-Input  (one session folder written by payload/payload.sh):
+Input  (one session folder written by pager/airtrace/payload.sh):
     capture.pcap   raw monitor-mode capture (radiotap); .pcapng also works
     gps.nmea       RMC sentences from the Pager's GPS, optionally prefixed
                    with the Pager's system time: "<epoch> $GPRMC,..."

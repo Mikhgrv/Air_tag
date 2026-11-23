@@ -1,7 +1,7 @@
 #!/bin/bash
 # Title: AirTrace - passive recon (AP + clients + GPS)
 # Description: Passively records 802.11 frames to a pcap and raw GPS NMEA.
-#              Classification and geotagging are done on the PC (airtrace.py).
+#              Classification and geotagging are done on the PC (pc/airtrace.py).
 # Author: (you)
 # Version: 0.2
 #
