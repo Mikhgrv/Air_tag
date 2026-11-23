@@ -11,7 +11,7 @@
 # are used as named in the spec. Check their argument syntax on your Pager
 # firmware before the first field run and adjust the three marked lines.
 
-LOOT_ROOT="${LOOT_ROOT:-$HOME/loot}"
+LOOT_ROOT="${LOOT_ROOT:-/root/loot}"   # Pager runs payloads without $HOME
 SESSION="airtrace-$(date -u +%Y%m%dT%H%M%SZ)"
 LOOT="$LOOT_ROOT/$SESSION"
 PCAP="$LOOT/capture.pcap"
