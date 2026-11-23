@@ -18,6 +18,7 @@ Nothing is transmitted: no deauth, no probes, no association.
 | File | Where it runs | What it does |
 |---|---|---|
 | `pager/airtrace/payload.sh` | Pager | Writes a pcap and a GPS log into `/root/loot/airtrace-<UTC time>/` |
+| `pager/gps_check/payload.sh` | Pager | Shows the GPS position every 2 s, records nothing (check the fix before a run) |
 | `pc/airtrace.py` | PC | Classifies MACs, geotags them, builds the CSV / KML |
 | `pc/requirements.txt` | PC | `scapy` |
 
