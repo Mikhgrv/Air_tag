@@ -68,7 +68,22 @@ label.opt { display: flex; gap: 6px; align-items: center; margin-top: 6px; color
 .bub { border-radius: 50%; color: #fff; font: 700 13px system-ui, sans-serif; display: flex;
   align-items: center; justify-content: center; border: 2px solid #fff; box-shadow: 0 1px 5px rgba(0,0,0,.5); }
 .bub.pr { background: var(--probe); } .bub.ap { background: var(--ap); } .bub.cl { background: var(--client); }
-#map.focus .bub.pr, #map.focus .mk-pr { opacity: .25; }
+/* focus mode (an AP is selected): grey out everything except that AP and its clients */
+#map { position: relative; }
+#map.focus .mk-ap:not(.sel), #map.focus .bub:not(.hot), #map.focus .mk-pr, #map.focus .mk-cl:not(.hot) {
+  filter: grayscale(1); opacity: .3; }
+#map.focus .mk-ap:not(.sel) .n { display: none; }
+.leaflet-marker-icon:has(.hot) { z-index: 100000 !important; }
+.leaflet-marker-icon:has(.mk-ap.sel) { z-index: 100001 !important; }
+#focusBar { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 1000;
+  display: none; align-items: center; gap: 10px; max-width: calc(100% - 140px);
+  background: var(--bg); color: var(--text); border-radius: 8px; padding: 6px 8px 6px 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.35); font-size: 13px; }
+#map.focus #focusBar { display: flex; }
+#focusBar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#focusBar button { flex: none; border: 1px solid var(--line); background: var(--panel); color: var(--text);
+  border-radius: 6px; padding: 4px 10px; font: inherit; cursor: pointer; }
+#focusBar button:hover { background: var(--hover); }
 .leaflet-tooltip { font-size: 12.5px; }
 
 /* popups */
@@ -136,7 +151,8 @@ label.opt { display: flex; gap: 6px; align-items: center; margin-top: 6px; color
     <div id="listHead"></div>
     <div id="list"></div>
   </aside>
-  <div id="map"></div>
+  <div id="map"><div id="focusBar"><span id="focusTxt"></span>
+    <button id="focusExit" type="button" title="Esc">Exit ✕</button></div></div>
 </div>
 
 <script id="data" type="application/json">__DATA__</script>
@@ -255,6 +271,7 @@ label.opt { display: flex; gap: 6px; align-items: center; margin-top: 6px; color
             (n ? '<span class="n">' + n + '</span>' : '') + '</div>' });
   }
   const clIcon = L.divIcon({ className: "", iconSize: [18, 18], iconAnchor: [9, 9], html: '<div class="mk mk-cl"></div>' });
+  const clHotIcon = L.divIcon({ className: "", iconSize: [18, 18], iconAnchor: [9, 9], html: '<div class="mk mk-cl hot"></div>' });
   const prIcon = L.divIcon({ className: "", iconSize: [14, 14], iconAnchor: [7, 7], html: '<div class="mk mk-pr"></div>' });
   const bubble = (cls, n) => {
     const s = n < 10 ? 32 : n < 100 ? 38 : 44;
@@ -337,7 +354,7 @@ label.opt { display: flex; gap: 6px; align-items: center; margin-top: 6px; color
   // ----------------------------------------------------------- selection --
   // clients of the selected AP; points on the same spot cluster and fan out on click
   const selLayer = L.layerGroup().addTo(map);
-  const selClients = cluster("cl", 14);
+  const selClients = cluster("cl hot", 14);
   const mapEl = document.getElementById("map");
   function clearSel() {
     if (selected && apMarkers.has(selected)) apMarkers.get(selected).setIcon(apIcon(byMac.get(selected), false));
@@ -351,12 +368,15 @@ label.opt { display: flex; gap: 6px; align-items: center; margin-top: 6px; color
       apMarkers.get(selected).setIcon(apIcon(byMac.get(selected), false));
     selected = mac; selLayer.clearLayers(); selClients.clearLayers();
     mapEl.classList.add("focus");
+    const nCl = (clientsOf.get(mac) || []).length;
+    document.getElementById("focusTxt").textContent =
+      apName(a) + " · " + nCl + " client" + (nCl === 1 ? "" : "s");
     const m = apMarkers.get(mac);
     const pts = [];
     if (m) { m.setIcon(apIcon(a, true)); pts.push(ll(a)); }
     (clientsOf.get(mac) || []).filter(has).forEach(c => {
       if (has(a)) L.polyline([ll(a), ll(c)], { color: "#30a46c", weight: 2.5, dashArray: "5 6", opacity: .95 }).addTo(selLayer);
-      selClients.addLayer(L.marker(ll(c), { icon: clIcon }).bindPopup(() => clientPopup(c), { maxWidth: 340 }));
+      selClients.addLayer(L.marker(ll(c), { icon: clHotIcon }).bindPopup(() => clientPopup(c), { maxWidth: 340 }));
       pts.push(ll(c));
     });
     selClients.addTo(map);
@@ -368,6 +388,12 @@ label.opt { display: flex; gap: 6px; align-items: center; margin-top: 6px; color
     renderList();
   }
   map.on("click", clearSel);
+  const bar = document.getElementById("focusBar");
+  L.DomEvent.disableClickPropagation(bar);
+  document.getElementById("focusExit").addEventListener("click", () => { map.closePopup(); clearSel(); });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && selected) { map.closePopup(); clearSel(); }
+  });
 
   // ---------------------------------------------------------- side list --
   const q = document.getElementById("q");

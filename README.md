@@ -62,7 +62,9 @@ map tiles and the Leaflet library.
   orange = open or weak (WEP/WPA); the small number is the client count,
   hovering shows the SSID and security. No MAC labels on the map.
 - Click an AP (on the map or in the side list): its clients appear as green
-  points with dashed lines to the AP, and the popup lists them.
+  points with dashed lines to the AP, and the popup lists them. Everything
+  else turns grey until you leave: Exit button at the top, Esc, or a click
+  on an empty spot of the map.
 - Probing (not connected) devices are grouped into blue counted bubbles; click
   one to list the devices in it and the networks they are looking for.
 - Devices are shown by vendor (Apple, Samsung, TP-Link...) instead of MAC;
