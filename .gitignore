@@ -8,3 +8,7 @@ loot/
 devices-*.csv
 devices-*.kml
 track-*.csv
+gps.log
+pcap_source.txt
+pager_output/
+airtrace-*/
