@@ -58,13 +58,18 @@ the Pager-vs-GPS clock correction for them).
 Open it in a browser (`xdg-open devices-<date>.html`); it needs internet for the
 map tiles and the Leaflet library.
 
-- Only access points are drawn at first: red Wi-Fi markers, the small number is
-  the client count, hovering shows the SSID. No MAC labels on the map.
+- Only access points are drawn at first: Wi-Fi markers, red = secured,
+  orange = open or weak (WEP/WPA); the small number is the client count,
+  hovering shows the SSID and security. No MAC labels on the map.
 - Click an AP (on the map or in the side list): its clients appear as green
   points with dashed lines to the AP, and the popup lists them.
 - Probing (not connected) devices are grouped into blue counted bubbles; click
   one to list the devices in it and the networks they are looking for.
-- Side panel: search by MAC or SSID, option to hide random-MAC probing devices.
+- Devices are shown by vendor (Apple, Samsung, TP-Link...) instead of MAC;
+  the MAC is still in every popup.
+- Side panel: search by SSID, vendor or MAC; filters by security, band and
+  minimum signal; option to hide random-MAC probing devices.
+- Zoom goes to level 22; devices on the same spot are grouped and fan out on click.
 - Layers button: satellite / street map, all clients, walk track.
 
 ### Classification (per MAC, highest rank wins)
@@ -80,14 +85,19 @@ locally-administered bit is set (a randomized MAC on phones).
 
 ### Coordinates
 
-A device's point is the GPS sample (within ±10 s) at the moment of its
-**strongest own** frame. RSSI is taken only from frames the device itself
-transmitted, so a client is never placed by its AP's signal.
+A device's point is the RSSI-weighted average of the GPS points where its own
+frames were strongest (within 10 dB of its best signal). RSSI is taken only
+from frames the device itself transmitted, so a client is never placed by its
+AP's signal. The point always lies on or near your walk track: one receiver
+cannot see beyond it, so walking around a building gives better positions.
 
 ### CSV columns
 
-`MAC, Type, RandomMAC, SSID/Probed, ConnectedBSSID, FirstSeenUTC, LastSeenUTC,
-Packets, BestRSSI, Lat, Lon`
+`MAC, Type, Vendor, RandomMAC, SSID/Probed, Security, Channel, Band,
+ConnectedBSSID, FirstSeenUTC, LastSeenUTC, Packets, BestRSSI, Lat, Lon, LocPoints`
+
+Security, Channel and Band are filled for access points (from beacons);
+LocPoints is how many GPS points were averaged for the location.
 
 ## Legal
 

@@ -10,7 +10,7 @@
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <style>
 :root {
-  --ap: #e5484d; --client: #30a46c; --probe: #3e63dd; --track: #f5a524;
+  --ap: #e5484d; --weak: #f76b15; --client: #30a46c; --probe: #3e63dd; --track: #ffb224;
   --bg: #ffffff; --panel: #f7f7f8; --text: #1c1c1f; --muted: #6f6f78; --line: #e2e2e6;
   --hover: #ececf0; --sel: #fde8e8;
 }
@@ -22,19 +22,24 @@
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
   font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
 #app { display: flex; height: 100%; }
-#side { width: 330px; display: flex; flex-direction: column; background: var(--panel);
+#side { width: 340px; display: flex; flex-direction: column; background: var(--panel);
   border-right: 1px solid var(--line); }
 #map { flex: 1; }
-header { padding: 12px 14px 8px; border-bottom: 1px solid var(--line); }
+header { padding: 12px 14px 10px; border-bottom: 1px solid var(--line); }
 h1 { font-size: 15px; margin: 0 0 6px; }
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 8px 0; }
 .stat { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; }
 .stat b { display: block; font-size: 16px; font-variant-numeric: tabular-nums; }
 .stat span { color: var(--muted); font-size: 11px; }
 .stat.ap b { color: var(--ap); } .stat.cl b { color: var(--client); } .stat.pr b { color: var(--probe); }
-input[type=search] { width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px;
+input[type=search], select { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px;
   background: var(--bg); color: var(--text); font: inherit; }
-label.opt { display: flex; gap: 6px; align-items: center; margin-top: 7px; color: var(--muted); cursor: pointer; }
+.filters { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 7px; }
+.filters label { display: block; font-size: 11px; color: var(--muted); }
+.range { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; }
+.range input { flex: 1; }
+.range output { min-width: 62px; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+label.opt { display: flex; gap: 6px; align-items: center; margin-top: 6px; color: var(--muted); cursor: pointer; }
 #listHead { padding: 8px 14px 4px; color: var(--muted); font-size: 11px; text-transform: uppercase;
   letter-spacing: .04em; }
 #list { flex: 1; overflow: auto; padding: 0 6px 10px; }
@@ -44,52 +49,54 @@ label.opt { display: flex; gap: 6px; align-items: center; margin-top: 7px; color
 .item .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; }
 .item .main { flex: 1; min-width: 0; }
 .item .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.item .sub { color: var(--muted); font-size: 11px; font-family: ui-monospace, Menlo, Consolas, monospace; }
-.item .cnt { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+.item .sub { color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item .cnt { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; text-align: right; }
 .empty { color: var(--muted); padding: 10px 8px; }
 
 /* markers */
-.mk { border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.45); }
-.mk-ap { width: 26px; height: 26px; background: var(--ap); display: flex; align-items: center;
+.mk { border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5); }
+.mk-ap { width: 32px; height: 32px; background: var(--ap); display: flex; align-items: center;
   justify-content: center; position: relative; }
-.mk-ap svg { width: 15px; height: 15px; }
-.mk-ap .n { position: absolute; top: -7px; right: -9px; min-width: 16px; height: 16px; padding: 0 4px;
-  border-radius: 8px; background: #fff; color: var(--client); font: 700 10px/16px system-ui, sans-serif;
-  text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
-.mk-ap.sel { outline: 3px solid #ffd60a; outline-offset: 1px; }
-.mk-cl { width: 14px; height: 14px; background: var(--client); }
-.mk-pr { width: 12px; height: 12px; background: var(--probe); }
-.cl-pr, .cl-ap, .cl-cl { border-radius: 50%; color: #fff; font: 700 12px system-ui, sans-serif; display: flex;
+.mk-ap.weak { background: var(--weak); }
+.mk-ap svg { width: 18px; height: 18px; }
+.mk-ap .n { position: absolute; top: -8px; right: -10px; min-width: 18px; height: 18px; padding: 0 4px;
+  border-radius: 9px; background: #fff; color: var(--client); font: 700 11px/18px system-ui, sans-serif;
+  text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.45); }
+.mk-ap.sel { outline: 4px solid #ffd60a; outline-offset: 1px; }
+.mk-cl { width: 18px; height: 18px; background: var(--client); }
+.mk-pr { width: 14px; height: 14px; background: var(--probe); }
+.bub { border-radius: 50%; color: #fff; font: 700 13px system-ui, sans-serif; display: flex;
   align-items: center; justify-content: center; border: 2px solid #fff; box-shadow: 0 1px 5px rgba(0,0,0,.5); }
-.cl-pr { background: var(--probe); }
-.cl-ap { background: var(--ap); }
-.cl-cl { background: var(--client); }
-/* while an AP is selected, fade the probing layer so its clients stand out */
-#map.focus .cl-pr, #map.focus .mk-pr { opacity: .25; }
+.bub.pr { background: var(--probe); } .bub.ap { background: var(--ap); } .bub.cl { background: var(--client); }
+#map.focus .bub.pr, #map.focus .mk-pr { opacity: .25; }
+.leaflet-tooltip { font-size: 12.5px; }
 
 /* popups */
-.leaflet-popup-content { margin: 10px 12px; font-size: 12.5px; min-width: 220px; }
-.pp h3 { margin: 0 0 4px; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+.leaflet-popup-content { margin: 10px 12px; font-size: 13px; min-width: 240px; }
+.pp h3 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: 6px; }
+.pp .vend { color: #666; margin: 1px 0 6px; }
 .pp .tag { font-size: 10px; font-weight: 700; color: #fff; border-radius: 4px; padding: 1px 5px; }
 .pp table { border-collapse: collapse; width: 100%; }
 .pp td { padding: 1px 0; vertical-align: top; }
 .pp td:first-child { color: #777; padding-right: 10px; white-space: nowrap; }
-.mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
-.pp .lst { max-height: 220px; overflow: auto; margin-top: 6px; border-top: 1px solid #ddd; padding-top: 4px; }
-.pp .row { padding: 3px 0; border-bottom: 1px solid #eee; }
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.pp .lst { max-height: 240px; overflow: auto; margin-top: 6px; border-top: 1px solid #ddd; padding-top: 4px; }
+.pp .row { padding: 4px 0; border-bottom: 1px solid #eee; }
 .pp .row:last-child { border-bottom: none; }
 .pp .row small { color: #777; }
 .pp a { cursor: pointer; }
+.sec { font-weight: 600; }
+.sec.weak { color: var(--weak); }
 
 .legend { background: var(--bg); color: var(--text); padding: 8px 10px; border-radius: 6px;
-  box-shadow: 0 1px 5px rgba(0,0,0,.35); font-size: 12px; line-height: 1.7; }
-.legend i { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 6px;
+  box-shadow: 0 1px 5px rgba(0,0,0,.35); font-size: 12px; line-height: 1.75; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px;
   vertical-align: -1px; border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
 .legend .trk { width: 16px; height: 3px; border-radius: 2px; border: none; box-shadow: none; vertical-align: 3px; }
 
 @media (max-width: 760px) {
   #app { flex-direction: column-reverse; }
-  #side { width: 100%; height: 42%; border-right: none; border-top: 1px solid var(--line); }
+  #side { width: 100%; height: 45%; border-right: none; border-top: 1px solid var(--line); }
 }
 </style>
 </head>
@@ -103,7 +110,27 @@ label.opt { display: flex; gap: 6px; align-items: center; margin-top: 7px; color
         <div class="stat cl"><b id="sCl">0</b><span>clients</span></div>
         <div class="stat pr"><b id="sPr">0</b><span>probing</span></div>
       </div>
-      <input id="q" type="search" placeholder="Search MAC or SSID…" autocomplete="off">
+      <input id="q" type="search" placeholder="Search SSID, vendor or MAC…" autocomplete="off">
+      <div class="filters">
+        <div><label for="fSec">Security</label>
+          <select id="fSec">
+            <option value="">All</option>
+            <option value="weak">Open / WEP / WPA</option>
+            <option value="WPA2">WPA2</option>
+            <option value="WPA3">WPA3</option>
+            <option value="Enterprise">Enterprise</option>
+          </select></div>
+        <div><label for="fBand">Band</label>
+          <select id="fBand">
+            <option value="">All</option>
+            <option value="2.4">2.4 GHz</option>
+            <option value="5">5 GHz</option>
+            <option value="6">6 GHz</option>
+          </select></div>
+        <div class="range"><label for="fRssi">Min signal</label>
+          <input id="fRssi" type="range" min="-100" max="-30" step="5" value="-100">
+          <output id="fRssiV">any</output></div>
+      </div>
       <label class="opt"><input type="checkbox" id="hideRnd"> Hide random-MAC probing devices</label>
     </header>
     <div id="listHead"></div>
@@ -140,138 +167,166 @@ label.opt { display: flex; gap: 6px; align-items: center; margin-top: 7px; color
   document.getElementById("sCl").textContent = clients.length;
   document.getElementById("sPr").textContent = probes.length;
 
+  const isWeak = a => /^(Open|WEP|WPA)$|^WPA\/WPA2/.test(a.sec || "");
   const apName = a => a.ssid && a.ssid !== "(hidden)" ? a.ssid : "(hidden network)";
+  const who = d => d.vendor || (d.rnd ? "Random MAC" : "Unknown vendor");
   const rssiTxt = d => d.rssi == null ? "—" : d.rssi + " dBm";
   const seenTxt = d => d.first === d.last ? esc(d.first) : esc(d.first) + " → " + esc(d.last.slice(11));
+  const chTxt = a => [a.ch ? "ch " + a.ch : "", a.band ? a.band + " GHz" : ""].filter(Boolean).join(" · ");
+  const secHtml = a => '<span class="sec' + (isWeak(a) ? " weak" : "") + '">' + esc(a.sec || "?") + '</span>';
+  const apLine = a => [a.sec || "", chTxt(a), a.vendor || ""].filter(Boolean).join(" · ");
+
+  // -------------------------------------------------------------- filters --
+  const fSec = document.getElementById("fSec"), fBand = document.getElementById("fBand");
+  const fRssi = document.getElementById("fRssi"), fRssiV = document.getElementById("fRssiV");
+  const hideRnd = document.getElementById("hideRnd");
+  const minRssi = () => +fRssi.value;
+  const strongEnough = d => minRssi() <= -100 || (d.rssi != null && d.rssi >= minRssi());
+  function apVisible(a) {
+    const s = a.sec || "";
+    if (fSec.value === "weak" && !isWeak(a)) return false;
+    if (fSec.value === "WPA2" && !/WPA2/.test(s)) return false;
+    if (fSec.value === "WPA3" && !/WPA3/.test(s)) return false;
+    if (fSec.value === "Enterprise" && !/Enterprise/.test(s)) return false;
+    if (fBand.value && a.band !== fBand.value) return false;
+    return strongEnough(a);
+  }
+  const probeVisible = p => !(hideRnd.checked && p.rnd) && strongEnough(p);
 
   // ----------------------------------------------------------------- map --
-  const map = L.map("map", { zoomControl: true, preferCanvas: false });
+  const MAXZ = 22;
+  const map = L.map("map", { maxZoom: MAXZ, zoomSnap: 0.5 });
   const sat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    { maxZoom: 20, maxNativeZoom: 19, attribution: "Imagery &copy; Esri" });
+    { maxZoom: MAXZ, maxNativeZoom: 19, attribution: "Imagery &copy; Esri" });
   const osm = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    { maxZoom: 20, maxNativeZoom: 19, attribution: "&copy; OpenStreetMap contributors" });
+    { maxZoom: MAXZ, maxNativeZoom: 19, attribution: "&copy; OpenStreetMap contributors" });
   sat.addTo(map);
 
   // --------------------------------------------------------------- popups --
+  function locTxt(d) {
+    return d.locn > 1 ? "average of " + d.locn + " GPS points" : d.locn === 1 ? "1 GPS point" : "no GPS";
+  }
   function apPopup(a) {
     const cl = clientsOf.get(a.mac) || [];
-    let h = '<div class="pp"><h3><span class="tag" style="background:var(--ap)">AP</span>' +
-      esc(apName(a)) + '</h3><table>' +
-      '<tr><td>BSSID</td><td class="mono">' + esc(a.mac) + '</td></tr>' +
+    let h = '<div class="pp"><h3><span class="tag" style="background:' + (isWeak(a) ? "var(--weak)" : "var(--ap)") +
+      '">AP</span>' + esc(apName(a)) + '</h3><div class="vend">' + esc(who(a)) + '</div><table>' +
+      '<tr><td>Security</td><td>' + secHtml(a) + '</td></tr>' +
+      '<tr><td>Channel</td><td>' + esc(chTxt(a) || "—") + '</td></tr>' +
       '<tr><td>Signal</td><td>' + rssiTxt(a) + '</td></tr>' +
       '<tr><td>Seen</td><td>' + seenTxt(a) + '</td></tr>' +
-      '<tr><td>Packets</td><td>' + a.pkts + '</td></tr>' +
+      '<tr><td>Location</td><td>' + locTxt(a) + '</td></tr>' +
+      '<tr><td>BSSID</td><td class="mono">' + esc(a.mac) + '</td></tr>' +
       '<tr><td>Clients</td><td><b>' + cl.length + '</b></td></tr></table>';
     if (cl.length) {
-      h += '<div class="lst">' + cl.map(c =>
-        '<div class="row"><span class="mono">' + esc(c.mac) + '</span>' +
-        (c.rnd ? ' <small>random</small>' : '') + '<br><small>' + rssiTxt(c) +
-        (has(c) ? '' : ' · no GPS') + '</small></div>').join("") + '</div>';
+      h += '<div class="lst">' + cl.slice().sort((x, y) => (y.rssi ?? -999) - (x.rssi ?? -999)).map(c =>
+        '<div class="row"><b>' + esc(who(c)) + '</b> <small>' + rssiTxt(c) + (has(c) ? '' : ' · no GPS') +
+        '</small><br><span class="mono">' + esc(c.mac) + '</span></div>').join("") + '</div>';
     }
     return h + '</div>';
   }
   function clientPopup(c) {
     const a = byMac.get(c.bssid);
     return '<div class="pp"><h3><span class="tag" style="background:var(--client)">CLIENT</span>' +
-      '<span class="mono">' + esc(c.mac) + '</span></h3><table>' +
-      '<tr><td>Connected to</td><td>' + (a ? esc(apName(a)) + '<br>' : '') +
-      '<span class="mono">' + esc(c.bssid || "—") + '</span></td></tr>' +
-      '<tr><td>Random MAC</td><td>' + (c.rnd ? "yes" : "no") + '</td></tr>' +
+      esc(who(c)) + '</h3><div class="vend mono">' + esc(c.mac) + '</div><table>' +
+      '<tr><td>Connected to</td><td>' + (a ? esc(apName(a)) : '<span class="mono">' + esc(c.bssid || "—") + '</span>') + '</td></tr>' +
       '<tr><td>Signal</td><td>' + rssiTxt(c) + '</td></tr>' +
-      '<tr><td>Seen</td><td>' + seenTxt(c) + '</td></tr></table></div>';
+      '<tr><td>Seen</td><td>' + seenTxt(c) + '</td></tr>' +
+      '<tr><td>Location</td><td>' + locTxt(c) + '</td></tr></table></div>';
   }
   function probeRow(p) {
-    return '<div class="row"><span class="mono">' + esc(p.mac) + '</span>' +
-      (p.rnd ? ' <small>random</small>' : '') + ' <small>' + rssiTxt(p) + '</small><br>' +
-      '<small>looking for: ' + esc(p.probed.join(", ") || "—") + '</small></div>';
+    return '<div class="row"><b>' + esc(who(p)) + '</b> <small>' + rssiTxt(p) + '</small><br>' +
+      '<small>looking for: ' + esc(p.probed.join(", ") || "—") + '</small><br>' +
+      '<span class="mono">' + esc(p.mac) + '</span></div>';
   }
   function probePopup(p) {
     return '<div class="pp"><h3><span class="tag" style="background:var(--probe)">PROBING</span>' +
-      '<span class="mono">' + esc(p.mac) + '</span></h3><table>' +
+      esc(who(p)) + '</h3><div class="vend mono">' + esc(p.mac) + '</div><table>' +
       '<tr><td>Looking for</td><td>' + esc(p.probed.join(", ") || "—") + '</td></tr>' +
-      '<tr><td>Random MAC</td><td>' + (p.rnd ? "yes" : "no") + '</td></tr>' +
       '<tr><td>Signal</td><td>' + rssiTxt(p) + '</td></tr>' +
-      '<tr><td>Seen</td><td>' + seenTxt(p) + '</td></tr></table></div>';
+      '<tr><td>Seen</td><td>' + seenTxt(p) + '</td></tr>' +
+      '<tr><td>Location</td><td>' + locTxt(p) + '</td></tr></table></div>';
   }
 
   // ---------------------------------------------------------------- icons --
   function apIcon(a, selected) {
     const n = (clientsOf.get(a.mac) || []).length;
-    return L.divIcon({ className: "", iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -12],
-      html: '<div class="mk mk-ap' + (selected ? " sel" : "") + '">' + WIFI_SVG +
+    return L.divIcon({ className: "", iconSize: [32, 32], iconAnchor: [16, 16], popupAnchor: [0, -14],
+      html: '<div class="mk mk-ap' + (isWeak(a) ? " weak" : "") + (selected ? " sel" : "") + '">' + WIFI_SVG +
             (n ? '<span class="n">' + n + '</span>' : '') + '</div>' });
   }
-  const clIcon = L.divIcon({ className: "", iconSize: [14, 14], iconAnchor: [7, 7], html: '<div class="mk mk-cl"></div>' });
-  const prIcon = L.divIcon({ className: "", iconSize: [12, 12], iconAnchor: [6, 6], html: '<div class="mk mk-pr"></div>' });
+  const clIcon = L.divIcon({ className: "", iconSize: [18, 18], iconAnchor: [9, 9], html: '<div class="mk mk-cl"></div>' });
+  const prIcon = L.divIcon({ className: "", iconSize: [14, 14], iconAnchor: [7, 7], html: '<div class="mk mk-pr"></div>' });
   const bubble = (cls, n) => {
-    const s = n < 10 ? 28 : n < 100 ? 34 : 40;
+    const s = n < 10 ? 32 : n < 100 ? 38 : 44;
     return L.divIcon({ className: "", iconSize: [s, s],
-      html: '<div class="' + cls + '" style="width:' + s + 'px;height:' + s + 'px">' + n + '</div>' });
+      html: '<div class="bub ' + cls + '" style="width:' + s + 'px;height:' + s + 'px">' + n + '</div>' });
   };
+  const cluster = (cls, radius, extra) => L.markerClusterGroup(Object.assign({
+    maxClusterRadius: radius, showCoverageOnHover: false, spiderfyDistanceMultiplier: 1.8,
+    iconCreateFunction: c => bubble(cls, c.getChildCount()) }, extra || {}));
 
   // -------------------------------------------------------------- layers --
-  const apLayer = L.markerClusterGroup({ maxClusterRadius: 28, showCoverageOnHover: false,
-    spiderfyDistanceMultiplier: 1.6, iconCreateFunction: c => bubble("cl-ap", c.getChildCount()) });
+  let selected = null;
+  const apLayer = cluster("ap", 30);
   const apMarkers = new Map();
   aps.filter(has).forEach(a => {
     const m = L.marker(ll(a), { icon: apIcon(a, false), riseOnHover: true, zIndexOffset: 1000 });
-    m.bindTooltip(esc(apName(a)), { direction: "top", offset: [0, -12] });
-    m.bindPopup(() => apPopup(a), { maxWidth: 320 });
+    m.bindTooltip(esc(apName(a)) + (a.sec ? ' · ' + esc(a.sec) : ''), { direction: "top", offset: [0, -16] });
+    m.bindPopup(() => apPopup(a), { maxWidth: 340 });
     m.on("click", () => selectAp(a.mac, false));
     apMarkers.set(a.mac, m);
-    apLayer.addLayer(m);
   });
+  function buildAps() {
+    apLayer.clearLayers();
+    apLayer.addLayers(aps.filter(a => apMarkers.has(a.mac) && apVisible(a)).map(a => apMarkers.get(a.mac)));
+    if (selected && !apVisible(byMac.get(selected))) clearSel();
+  }
   apLayer.addTo(map);
 
   // probing devices: clusters; clicking a cluster lists its devices
-  const prLayer = L.markerClusterGroup({ maxClusterRadius: 60, showCoverageOnHover: false,
-    zoomToBoundsOnClick: false, spiderfyOnMaxZoom: false,
-    iconCreateFunction: c => bubble("cl-pr", c.getChildCount()) });
+  const prLayer = cluster("pr", 60, { zoomToBoundsOnClick: false, spiderfyOnMaxZoom: false });
   function buildProbes() {
     prLayer.clearLayers();
-    const hide = document.getElementById("hideRnd").checked;
-    probes.filter(p => has(p) && !(hide && p.rnd)).forEach(p => {
+    prLayer.addLayers(probes.filter(p => has(p) && probeVisible(p)).map(p => {
       const m = L.marker(ll(p), { icon: prIcon });
-      m.bindPopup(() => probePopup(p), { maxWidth: 320 });
+      m.bindPopup(() => probePopup(p), { maxWidth: 340 });
       m._dev = p;
-      prLayer.addLayer(m);
-    });
+      return m;
+    }));
   }
   prLayer.on("clusterclick", e => {
     const list = e.layer.getAllChildMarkers().map(m => m._dev)
       .sort((x, y) => (y.rssi ?? -999) - (x.rssi ?? -999));
     const head = '<div class="pp"><h3><span class="tag" style="background:var(--probe)">PROBING</span>' +
-      list.length + ' devices here</h3><small>Not connected to any network. ' +
-      '<a id="zoomIn">Zoom in</a></small><div class="lst">';
-    L.popup({ maxWidth: 340 }).setLatLng(e.layer.getLatLng())
+      list.length + ' devices here</h3><div class="vend">Not connected to any network. ' +
+      '<a id="zoomIn">Zoom in</a></div><div class="lst">';
+    L.popup({ maxWidth: 360 }).setLatLng(e.layer.getLatLng())
       .setContent(head + list.map(probeRow).join("") + '</div></div>').openOn(map);
     const z = document.getElementById("zoomIn");
     if (z) z.onclick = () => { map.closePopup(); e.layer.zoomToBounds({ padding: [40, 40] }); };
   });
-  buildProbes();
   prLayer.addTo(map);
-  document.getElementById("hideRnd").addEventListener("change", buildProbes);
 
   // all clients (off by default; selecting an AP shows its own clients)
-  const allClLayer = L.markerClusterGroup({ maxClusterRadius: 40, showCoverageOnHover: false,
-    iconCreateFunction: c => bubble("cl-cl", c.getChildCount()) });
+  const allClLayer = cluster("cl", 40);
   clients.filter(has).forEach(c => {
-    allClLayer.addLayer(L.marker(ll(c), { icon: clIcon }).bindPopup(() => clientPopup(c)));
+    allClLayer.addLayer(L.marker(ll(c), { icon: clIcon }).bindPopup(() => clientPopup(c), { maxWidth: 340 }));
   });
 
   // track
-  const trackLayer = L.polyline(DATA.track, { color: getComputedStyle(document.documentElement)
-    .getPropertyValue("--track").trim() || "#f5a524", weight: 3, opacity: .85 });
+  const trackLayer = L.polyline(DATA.track, { color: "#ffb224", weight: 3, opacity: .9 });
   if (DATA.track.length > 1) trackLayer.addTo(map);
 
   L.control.layers({ "Satellite": sat, "Map": osm }, {
     "Access points": apLayer, "Probing devices": prLayer,
     "All clients": allClLayer, "Walk track": trackLayer }, { collapsed: true }).addTo(map);
+  L.control.scale({ imperial: false }).addTo(map);
 
   const legend = L.control({ position: "bottomright" });
   legend.onAdd = () => {
     const d = L.DomUtil.create("div", "legend");
-    d.innerHTML = '<i style="background:var(--ap)"></i>Access point (number = clients)<br>' +
+    d.innerHTML = '<i style="background:var(--ap)"></i>Access point, secured (number = clients)<br>' +
+      '<i style="background:var(--weak)"></i>Access point, open or weak (WEP/WPA)<br>' +
       '<i style="background:var(--client)"></i>Client (click an AP to show)<br>' +
       '<i style="background:var(--probe)"></i>Probing, not connected<br>' +
       '<i class="trk" style="background:var(--track)"></i>Walk track';
@@ -280,30 +335,34 @@ label.opt { display: flex; gap: 6px; align-items: center; margin-top: 7px; color
   legend.addTo(map);
 
   // ----------------------------------------------------------- selection --
+  // clients of the selected AP; points on the same spot cluster and fan out on click
   const selLayer = L.layerGroup().addTo(map);
+  const selClients = cluster("cl", 14);
   const mapEl = document.getElementById("map");
-  let selected = null;
   function clearSel() {
     if (selected && apMarkers.has(selected)) apMarkers.get(selected).setIcon(apIcon(byMac.get(selected), false));
-    selected = null; selLayer.clearLayers(); mapEl.classList.remove("focus"); renderList();
+    selected = null; selLayer.clearLayers(); selClients.clearLayers(); map.removeLayer(selClients);
+    mapEl.classList.remove("focus"); renderList();
   }
   function selectAp(mac, fly) {
     const a = byMac.get(mac);
     if (!a) return;
     if (selected && selected !== mac && apMarkers.has(selected))
       apMarkers.get(selected).setIcon(apIcon(byMac.get(selected), false));
-    selected = mac; selLayer.clearLayers(); mapEl.classList.add("focus");
+    selected = mac; selLayer.clearLayers(); selClients.clearLayers();
+    mapEl.classList.add("focus");
     const m = apMarkers.get(mac);
     const pts = [];
     if (m) { m.setIcon(apIcon(a, true)); pts.push(ll(a)); }
     (clientsOf.get(mac) || []).filter(has).forEach(c => {
-      if (has(a)) L.polyline([ll(a), ll(c)], { color: "#30a46c", weight: 2, dashArray: "4 5", opacity: .9 }).addTo(selLayer);
-      L.marker(ll(c), { icon: clIcon, zIndexOffset: 500 }).bindPopup(() => clientPopup(c)).addTo(selLayer);
+      if (has(a)) L.polyline([ll(a), ll(c)], { color: "#30a46c", weight: 2.5, dashArray: "5 6", opacity: .95 }).addTo(selLayer);
+      selClients.addLayer(L.marker(ll(c), { icon: clIcon }).bindPopup(() => clientPopup(c), { maxWidth: 340 }));
       pts.push(ll(c));
     });
+    selClients.addTo(map);
     if (fly && pts.length) {
-      if (pts.length > 1) map.fitBounds(pts, { padding: [60, 60], maxZoom: 19 });
-      else map.setView(pts[0], Math.max(map.getZoom(), 18));
+      if (pts.length > 1) map.fitBounds(pts, { padding: [70, 70], maxZoom: 20 });
+      else map.setView(pts[0], Math.max(map.getZoom(), 19));
       if (m) apLayer.zoomToShowLayer(m, () => m.openPopup());
     }
     renderList();
@@ -314,24 +373,26 @@ label.opt { display: flex; gap: 6px; align-items: center; margin-top: 7px; color
   const q = document.getElementById("q");
   const list = document.getElementById("list");
   const listHead = document.getElementById("listHead");
-  const color = { AP: "var(--ap)", ASSOCIATED: "var(--client)", PROBING: "var(--probe)" };
+  const color = d => d.type === "AP" ? (isWeak(d) ? "var(--weak)" : "var(--ap)")
+    : d.type === "ASSOCIATED" ? "var(--client)" : "var(--probe)";
 
   function item(d) {
     const el = document.createElement("div");
     el.className = "item" + (d.mac === selected ? " sel" : "");
     let name, sub, cnt = "";
     if (d.type === "AP") {
-      name = apName(d); sub = d.mac; cnt = (clientsOf.get(d.mac) || []).length + " cl";
+      name = apName(d); sub = apLine(d) || d.mac;
+      const n = (clientsOf.get(d.mac) || []).length;
+      cnt = (n ? n + " cl<br>" : "") + esc(rssiTxt(d));
     } else if (d.type === "ASSOCIATED") {
       const a = byMac.get(d.bssid);
-      name = "Client → " + (a ? apName(a) : (d.bssid || "?")); sub = d.mac;
+      name = who(d); sub = "client of " + (a ? apName(a) : (d.bssid || "?")); cnt = esc(rssiTxt(d));
     } else {
-      name = "Probing: " + (d.probed.join(", ") || "—"); sub = d.mac;
+      name = who(d); sub = "looking for: " + (d.probed.join(", ") || "—"); cnt = esc(rssiTxt(d));
     }
-    el.innerHTML = '<span class="dot" style="background:' + color[d.type] + '"></span>' +
+    el.innerHTML = '<span class="dot" style="background:' + color(d) + '"></span>' +
       '<div class="main"><div class="name">' + esc(name) + '</div><div class="sub">' + esc(sub) +
-      (has(d) ? '' : ' · no GPS') + ' · ' + esc(rssiTxt(d)) + '</div></div>' +
-      (cnt ? '<span class="cnt">' + esc(cnt) + '</span>' : '');
+      (has(d) ? '' : ' · no GPS') + '</div></div><span class="cnt">' + cnt + '</span>';
     el.onclick = () => focus(d);
     return el;
   }
@@ -339,33 +400,41 @@ label.opt { display: flex; gap: 6px; align-items: center; margin-top: 7px; color
     if (d.type === "AP") return selectAp(d.mac, true);
     if (d.type === "ASSOCIATED" && byMac.has(d.bssid)) return selectAp(d.bssid, true);
     if (!has(d)) return;
-    map.setView(ll(d), Math.max(map.getZoom(), 19));
-    L.popup({ maxWidth: 320 }).setLatLng(ll(d))
+    map.setView(ll(d), Math.max(map.getZoom(), 20));
+    L.popup({ maxWidth: 340 }).setLatLng(ll(d))
       .setContent(d.type === "PROBING" ? probePopup(d) : clientPopup(d)).openOn(map);
   }
   function renderList() {
     const term = q.value.trim().toLowerCase();
     let rows;
     if (!term) {
-      rows = aps.slice().sort((x, y) => (clientsOf.get(y.mac).length - clientsOf.get(x.mac).length) ||
-        ((y.rssi ?? -999) - (x.rssi ?? -999)));
-      listHead.textContent = "Access points (" + rows.length + ")";
+      rows = aps.filter(apVisible).sort((x, y) =>
+        (clientsOf.get(y.mac).length - clientsOf.get(x.mac).length) || ((y.rssi ?? -999) - (x.rssi ?? -999)));
+      listHead.textContent = "Access points (" + rows.length + (rows.length < aps.length ? " of " + aps.length : "") + ")";
     } else {
       const match = d => d.mac.includes(term) || (d.ssid || "").toLowerCase().includes(term) ||
-        d.probed.some(s => s.toLowerCase().includes(term));
+        (d.vendor || "").toLowerCase().includes(term) || d.probed.some(s => s.toLowerCase().includes(term));
       const order = { AP: 0, ASSOCIATED: 1, PROBING: 2 };
-      rows = devs.filter(match).sort((x, y) => order[x.type] - order[y.type]);
+      rows = devs.filter(d => match(d) && (d.type !== "AP" || apVisible(d)))
+        .sort((x, y) => order[x.type] - order[y.type]);
       listHead.textContent = rows.length + " match" + (rows.length === 1 ? "" : "es");
     }
     list.replaceChildren(...rows.slice(0, 300).map(item));
     if (!rows.length) list.innerHTML = '<div class="empty">Nothing found.</div>';
   }
+
+  function applyFilters() {
+    fRssiV.textContent = minRssi() <= -100 ? "any" : "≥ " + minRssi() + " dBm";
+    buildAps(); buildProbes(); renderList();
+  }
+  [fSec, fBand, hideRnd].forEach(el => el.addEventListener("change", applyFilters));
+  fRssi.addEventListener("input", applyFilters);
   q.addEventListener("input", renderList);
-  renderList();
+  applyFilters();
 
   // ---------------------------------------------------------------- view --
   const all = devs.filter(has).map(ll).concat(DATA.track);
-  if (all.length) map.fitBounds(all, { padding: [30, 30], maxZoom: 19 });
+  if (all.length) map.fitBounds(all, { padding: [30, 30], maxZoom: 20 });
   else map.setView([0, 0], 2);
 })();
 </script>

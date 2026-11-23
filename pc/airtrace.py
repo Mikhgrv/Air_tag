@@ -23,8 +23,12 @@ Classification per MAC, highest rank wins:
     PROBING     probe request only, MAC = addr2
 Broadcast and multicast addresses are ignored.
 
-Location of a device = GPS fix at the moment of its strongest frame that
-the device itself transmitted (RSSI of a frame belongs to its sender only).
+Location of a device = RSSI-weighted average of the GPS points where its own
+frames were strongest (within LOC_WINDOW_DB of its best signal). Only frames
+the device transmitted count: RSSI of a frame belongs to its sender.
+
+Vendor names come from Scapy's OUI database (falls back to Wireshark's manuf
+or /usr/share/ieee-data/oui.txt). Randomized MACs have no vendor.
 """
 
 import argparse
@@ -34,18 +38,22 @@ import glob
 import html
 import json
 import os
+import re
 import statistics
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from functools import reduce
 
-from scapy.layers.dot11 import Dot11, Dot11Elt, RadioTap
+from scapy.config import conf
+from scapy.layers.dot11 import Dot11, Dot11Beacon, Dot11Elt, Dot11ProbeResp, RadioTap
 from scapy.utils import PcapReader
 
 MAX_FIX_DELTA_S = 10          # packet is matched to the nearest fix within this
 TRACK_INTERVAL_S = 1.0        # track resolution
 CLOCK_SKEW_MIN_S = 2          # apply Pager-clock correction above this skew
+LOC_WINDOW_DB = 10            # GPS points within this many dB of the best one
+                              # are averaged into the device location
 
 RANK = {"PROBING": 1, "ASSOCIATED": 2, "AP": 3}
 KML_COLOR = {                 # KML uses aabbggrr
@@ -54,8 +62,9 @@ KML_COLOR = {                 # KML uses aabbggrr
     "PROBING": "ffff8000",    # blue-ish
 }
 CSV_HEADER = [
-    "MAC", "Type", "RandomMAC", "SSID/Probed", "ConnectedBSSID",
-    "FirstSeenUTC", "LastSeenUTC", "Packets", "BestRSSI", "Lat", "Lon",
+    "MAC", "Type", "Vendor", "RandomMAC", "SSID/Probed", "Security", "Channel", "Band",
+    "ConnectedBSSID", "FirstSeenUTC", "LastSeenUTC", "Packets", "BestRSSI",
+    "Lat", "Lon", "LocPoints",
 ]
 
 
@@ -89,6 +98,103 @@ def ssid_of(pkt):
             return raw.decode("utf-8", errors="replace")
         layer = layer.payload
     return None
+
+
+_OUI = None
+
+
+def _load_oui_files():
+    """Fallback vendor table from Wireshark / ieee-data, {'AABBCC': vendor}."""
+    table = {}
+    for path in ("/usr/share/wireshark/manuf", "/usr/share/ieee-data/oui.txt"):
+        if not os.path.exists(path):
+            continue
+        with open(path, errors="replace") as fh:
+            for line in fh:
+                if path.endswith("manuf"):
+                    parts = line.rstrip("\n").split("\t")
+                    if len(parts) >= 2 and len(parts[0]) == 8:
+                        table[parts[0].replace(":", "").upper()] = parts[-1].strip()
+                elif "(hex)" in line:
+                    prefix, _, name = line.partition("(hex)")
+                    table[prefix.strip().replace("-", "").upper()] = name.strip()
+        if table:
+            break
+    return table
+
+
+_VENDOR_NOISE = re.compile(
+    r"\b(technologies|technology|corporation|corporate|corp|company|co|ltd|limited|inc|"
+    r"incorporated|llc|gmbh|ag|sa|srl|bv|plc|electronics|trading|foundation|"
+    r"international|communication|communications|telecom|mobile)\b\.?", re.I)
+
+
+def short_vendor(name):
+    """'Tp-Link Technologies Co.,Ltd.' -> 'Tp-Link'."""
+    short = _VENDOR_NOISE.sub("", name.split(",")[0])
+    short = re.sub(r"[\s.,]+$", "", re.sub(r"\s{2,}", " ", short)).strip()
+    return short or name
+
+
+def vendor_of(mac):
+    """Manufacturer for a globally assigned MAC, '' if unknown or randomized."""
+    global _OUI
+    if is_random_mac(mac):
+        return ""
+    try:
+        name = conf.manufdb._get_manuf(mac)
+        if name and name.lower() != mac.lower():
+            return short_vendor(name)
+    except Exception:
+        pass
+    if _OUI is None:
+        _OUI = _load_oui_files()
+    return short_vendor(_OUI.get(mac.replace(":", "")[:6].upper(), "")) if _OUI else ""
+
+
+def security_label(crypto):
+    """Scapy network_stats() crypto set -> 'Open', 'WEP', 'WPA2', 'WPA3', ..."""
+    s = " ".join(sorted(crypto or ()))
+    if not s:
+        return ""
+    if "OWE" in s:
+        return "OWE"
+    if "WPA3-transition" in s or ("SAE" in s and "PSK" in s):
+        base = "WPA2/WPA3"
+    elif "WPA3" in s or "SAE" in s:
+        base = "WPA3"
+    elif "WPA2" in s and "WPA/" in s:
+        base = "WPA/WPA2"
+    elif "WPA2" in s:
+        base = "WPA2"
+    elif s.startswith("WPA"):
+        base = "WPA"
+    elif "WEP" in s:
+        return "WEP"
+    elif "OPN" in s:
+        return "Open"
+    else:
+        return s
+    return base + ("-Enterprise" if "802.1X" in s else "")
+
+
+def band_channel(freq, channel):
+    """(band, channel) from radiotap frequency (MHz) and/or DS channel."""
+    band = ""
+    if freq:
+        if 2400 <= freq <= 2500:
+            band, ch = "2.4", (14 if freq == 2484 else (freq - 2407) // 5)
+        elif 4900 <= freq < 5925:
+            band, ch = "5", (freq - 5000) // 5
+        elif 5925 <= freq <= 7125:
+            band, ch = "6", (freq - 5950) // 5
+        else:
+            ch = None
+        if band == "6" or not channel:
+            channel = ch
+    if not band and channel:
+        band = "2.4" if channel <= 14 else "5"
+    return band, channel
 
 
 def rssi_of(pkt):
@@ -212,7 +318,12 @@ class Geo:
         self.times = [p[0] for p in track]
 
     def fix_for(self, epoch):
-        """Nearest GPS point within MAX_FIX_DELTA_S, or None."""
+        """Nearest GPS point (lat, lon) within MAX_FIX_DELTA_S, or None."""
+        i = self.index_for(epoch)
+        return None if i is None else (self.track[i][1], self.track[i][2])
+
+    def index_for(self, epoch):
+        """Index of the nearest track point within MAX_FIX_DELTA_S, or None."""
         if not self.times:
             return None
         i = bisect.bisect_left(self.times, epoch)
@@ -222,8 +333,28 @@ class Geo:
                 if best is None or abs(self.times[j] - epoch) < abs(self.times[best] - epoch):
                     best = j
         if best is not None and abs(self.times[best] - epoch) <= MAX_FIX_DELTA_S:
-            return self.track[best][1], self.track[best][2]
+            return best
         return None
+
+    def locate(self, samples):
+        """
+        samples: {track index: best RSSI there}. RSSI-weighted average of the
+        points within LOC_WINDOW_DB of the best one. Returns (lat, lon, n).
+        """
+        if not samples:
+            return None
+        best = max(samples.values())
+        lat = lon = wsum = 0.0
+        n = 0
+        for i, r in samples.items():
+            if r < best - LOC_WINDOW_DB:
+                continue
+            w = 10 ** ((r - best) / 10.0)        # linear power, best point = 1
+            lat += w * self.track[i][1]
+            lon += w * self.track[i][2]
+            wsum += w
+            n += 1
+        return lat / wsum, lon / wsum, n
 
 
 # --------------------------------------------------------- classification --
@@ -257,8 +388,8 @@ def candidates(pkt):
 
 
 class Device:
-    __slots__ = ("kinds", "ssids", "probed", "bssids", "packets",
-                 "first", "last", "best_rssi", "geo_rssi", "best_coord")
+    __slots__ = ("kinds", "ssids", "probed", "bssids", "packets", "first", "last",
+                 "best_rssi", "samples", "coord", "security", "channel", "band")
 
     def __init__(self):
         self.kinds = Counter()
@@ -269,8 +400,11 @@ class Device:
         self.first = None
         self.last = None
         self.best_rssi = None     # strongest own frame, reported in CSV
-        self.geo_rssi = None      # strongest own frame that had a GPS fix
-        self.best_coord = None
+        self.samples = {}         # track index -> strongest own RSSI there
+        self.coord = None         # (lat, lon, points used), set after the scan
+        self.security = None      # APs: from the first beacon / probe response
+        self.channel = None
+        self.band = ""
 
     def rank_kind(self):
         return max(self.kinds, key=lambda k: RANK[k])
@@ -284,7 +418,7 @@ def scan(pcap_path, geo, clock_offset=0.0):
                 continue
             epoch = float(pkt.time) + clock_offset
             rssi = rssi_of(pkt)
-            fix = None
+            fix_idx = None
             fix_looked_up = False
             for mac, kind, extra, is_tx in candidates(pkt):
                 if not mac or is_group_address(mac):
@@ -298,6 +432,8 @@ def scan(pcap_path, geo, clock_offset=0.0):
                 if kind == "AP":
                     if extra:
                         dev.ssids[extra] += 1
+                    if dev.security is None and is_tx:
+                        ap_details(pkt, dev)
                 elif kind == "PROBING":
                     dev.probed.add(extra)
                 elif kind == "ASSOCIATED":
@@ -309,11 +445,28 @@ def scan(pcap_path, geo, clock_offset=0.0):
                 if dev.best_rssi is None or rssi > dev.best_rssi:
                     dev.best_rssi = rssi
                 if not fix_looked_up:
-                    fix, fix_looked_up = geo.fix_for(epoch), True
-                if fix and (dev.geo_rssi is None or rssi > dev.geo_rssi):
-                    dev.geo_rssi = rssi
-                    dev.best_coord = fix          # coord at strongest moment
+                    fix_idx, fix_looked_up = geo.index_for(epoch), True
+                if fix_idx is not None and rssi > dev.samples.get(fix_idx, -999):
+                    dev.samples[fix_idx] = rssi
+    for dev in devices.values():
+        dev.coord = geo.locate(dev.samples)
+        dev.samples = None                        # free memory
     return devices
+
+
+def ap_details(pkt, dev):
+    """Security, channel and band from a beacon / probe response."""
+    layer = pkt.getlayer(Dot11Beacon) or pkt.getlayer(Dot11ProbeResp)
+    if layer is None:
+        return
+    try:
+        stats = layer.network_stats()
+    except Exception:
+        stats = {}
+    dev.security = security_label(stats.get("crypto"))
+    rt = pkt.getlayer(RadioTap)
+    freq = getattr(rt, "ChannelFrequency", None) if rt is not None else None
+    dev.band, dev.channel = band_channel(freq, stats.get("channel"))
 
 
 # ----------------------------------------------------------------- output --
@@ -330,14 +483,20 @@ def row_for(mac, dev):
         connected = dev.bssids.most_common(1)[0][0] if dev.bssids else ""
 
     lat = lon = ""
-    if dev.best_coord:
-        lat, lon = f"{dev.best_coord[0]:.6f}", f"{dev.best_coord[1]:.6f}"
+    points = ""
+    if dev.coord:
+        lat, lon, points = f"{dev.coord[0]:.6f}", f"{dev.coord[1]:.6f}", dev.coord[2]
 
+    is_ap = kind == "AP"
     return {
         "MAC": mac,
         "Type": kind,
+        "Vendor": vendor_of(mac),
         "RandomMAC": "yes" if is_random_mac(mac) else "no",
         "SSID/Probed": ssid_or_probed,
+        "Security": (dev.security or "") if is_ap else "",
+        "Channel": (dev.channel or "") if is_ap else "",
+        "Band": dev.band if is_ap else "",
         "ConnectedBSSID": connected,
         "FirstSeenUTC": utc_str(dev.first),
         "LastSeenUTC": utc_str(dev.last),
@@ -345,6 +504,7 @@ def row_for(mac, dev):
         "BestRSSI": dev.best_rssi if dev.best_rssi is not None else "",
         "Lat": lat,
         "Lon": lon,
+        "LocPoints": points,
     }
 
 
@@ -405,7 +565,12 @@ def write_html(path, rows, track, title):
         devices.append({
             "mac": r["MAC"],
             "type": kind,
+            "vendor": r["Vendor"],
             "rnd": r["RandomMAC"] == "yes",
+            "sec": r["Security"],
+            "ch": r["Channel"],
+            "band": r["Band"],
+            "locn": r["LocPoints"] or 0,
             "ssid": r["SSID/Probed"] if kind == "AP" else "",
             "probed": r["SSID/Probed"].split("; ") if kind == "PROBING" and r["SSID/Probed"] else [],
             "bssid": r["ConnectedBSSID"],
